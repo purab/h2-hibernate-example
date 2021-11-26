@@ -1,0 +1,60 @@
+pipeline {
+  agent any
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '5'))
+  }
+  environment {
+   APP_NAME = "h2-hibernate-example"
+   //Note: use Multibranch pipeline and just put your git repo url
+    // Put your credentails jenkins - http://localhost:9090/credentials/ - id=dockerhub-cred
+    DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
+  }
+  stages {
+      stage("Env Variables") {
+            steps {
+                sh "printenv"
+            }
+     }
+     stage('Build WAR') {
+        steps {
+          //build the War file by using command
+          sh '{JENKINS_HOME} ./mvn package'
+        }
+    }
+    stage('Build') {
+      steps {
+        //using Build number Jenkins environment variable
+        sh 'docker build -t purabdk/${APP_NAME}:${BUILD_NUMBER} .'
+      }
+    }
+    stage('Login') {
+          steps {
+           //login to docker hub
+            sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+          }
+    }
+    stage('Push') {
+      steps {
+        //push image to docker hub
+        sh 'docker push purabdk/${APP_NAME}:${BUILD_NUMBER}'
+      }
+    }
+    // Running Docker container, make sure port 8096 is opened in
+        stage('Docker Run') {
+         steps{
+             script {
+                dockerImage.run("-p 8096:5000 --rm --name ${APP_NAME}")
+             }
+          }
+  }
+  post {
+    always {
+         script {
+            if (getContext(hudson.FilePath)) {
+                deleteDir()
+            }
+            sh 'docker logout'
+        }
+    }
+  }
+}
